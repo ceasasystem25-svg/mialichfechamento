@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Consulta de NFs</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f4f4f9; }
+    
+    .banner { 
+      background-color: #003366; 
+      background-image: url('meu-banner.jpg'); /* COLOQUE SUA IMAGEM AQUI */
+      background-size: cover; 
+      background-position: center; 
+      color: white; 
+      padding: 40px 20px; 
+      text-align: center; 
+      border-radius: 0 0 8px 8px;
+    }
+    
+    .container { max-width: 900px; margin: 20px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    input { padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button { background: #007bff; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 5px; font-weight: bold; margin-right: 5px; }
+    button:hover { opacity: 0.9; }
+    
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+    th { background-color: #003366; color: white; }
+    
+    .btn-del { background: #dc3545; padding: 5px 10px; font-size: 12px; }
+    .btn-edit { background: #ffc107; color: black; padding: 5px 10px; font-size: 12px; }
+
+    /* BARRA DE BUSCA COM CALENDÁRIO */
+    .barra-busca { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+    .barra-busca label { font-weight: bold; }
+    .barra-busca input[type="date"] { width: 150px; }
+
+    /* ESTILO DO MODAL DE EDIÇÃO */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
+    .modal-content { background: white; margin: 5% auto; padding: 20px; width: 350px; border-radius: 8px; text-align: left; }
+    .modal-content input { width: 100%; margin-bottom: 10px; }
+    .modal-content label { font-weight: bold; font-size: 14px; }
+    .modal-content .acoes-modal { text-align: center; margin-top: 15px; }
+    .modal-content button { width: 45%; margin: 0; }
+    .btn-cancel { background: #6c757d; }
+
+    /* REGRAS PARA IMPRESSÃO DO RELATÓRIO */
+    @media print {
+      body { background: white; }
+      .banner { padding: 20px; background: none; color: black; border-radius: 0; }
+      .container { box-shadow: none; max-width: 100%; margin: 0; padding: 0; }
+      .nao-imprimir, .col-acao { display: none !important; }
+      table { border: 2px solid #000; }
+      th { background-color: #f2f2f2 !important; color: black !important; border: 1px solid #000; }
+      td { border: 1px solid #000; color: black; }
+    }
+  </style>
+</head>
+<body onload="carregarDados()">
+
+  <div class="banner">
+    <img src="https://i.postimg.cc/5t29QDKd/logo.png" alt="Logotipo" style="max-height: 80px; margin-bottom: 10px;">
+    <h2>Consulta de Lançamentos</h2>
+  </div>
+
+  <div class="container">
+    <div class="nao-imprimir" style="margin-bottom: 20px;">
+      <button onclick="window.location.href='index.html'" style="background:#6c757d;">&larr; Voltar para Lançamento</button>
+    </div>
+    
+    <div class="barra-busca nao-imprimir">
+      <label>De:</label>
+      <input type="date" id="buscaInicio">
+      
+      <label>Até:</label>
+      <input type="date" id="buscaFim">
+      
+      <button onclick="filtrarTabela()">Buscar</button>
+      <button onclick="limparFiltros()" style="background:#28a745;">Ver Todos</button>
+      
+      <button onclick="window.print()" style="background:#17a2b8; margin-left: auto;">🖨️ Imprimir Relatório</button>
+    </div>
+
+    <div id="tabelaContainer">Conectando ao banco de dados...</div>
+  </div>
+
+  <div id="modalEdicao" class="modal nao-imprimir">
+    <div class="modal-content" id="conteudoModal">
+      <h3 style="text-align: center; margin-top: 0;">Editar Lançamento</h3>
+      
+      <input type="hidden" id="editId">
+      
+      <label>Período:</label>
+      <input type="text" id="editPeriodo">
+      
+      <label>Quant. NF:</label>
+      <input type="number" id="editQuant">
+      
+      <label>Valor Bruto (R$):</label>
+      <input type="text" id="editBruto">
+      
+      <label>C/ Desconto (R$):</label>
+      <input type="text" id="editDesconto">
+      
+      <label>Vencimento:</label>
+      <input type="date" id="editVencimento">
+      
+      <div class="acoes-modal">
+        <button class="btn-cancel" onclick="fecharEdicao()">Cancelar</button>
+        <button style="background: #28a745;" onclick="salvarEdicao()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const urlAppScript = 'https://script.google.com/macros/s/AKfycbxnSPaTlfZvHoTUx_MxzjIOzhc652t3uOvupSvoEqxgTAvrGOKlLmAaQkzI3d-rYeGz/exec';
+    let dadosGlobais = [];
+
+    function carregarDados() {
+      document.getElementById('tabelaContainer').innerHTML = "Buscando dados no Google Sheets...";
+      
+      fetch(urlAppScript + "?action=buscar")
+        .then(response => response.json())
+        .then(dados => {
+          dadosGlobais = dados;
+          renderizarHTML(dados);
+        })
+        .catch(error => {
+          document.getElementById('tabelaContainer').innerHTML = "Erro ao carregar dados. Verifique a permissão do Apps Script.";
+        });
+    }
+
+    function renderizarHTML(dados) {
+      if(dados.length === 0) {
+        document.getElementById('tabelaContainer').innerHTML = "<p>Nenhum registro encontrado no período.</p>";
+        return;
+      }
+      
+      let html = "<table><tr><th>Período</th><th>Quant. NF</th><th>Bruto</th><th>C/ Desconto</th><th>Vencimento</th><th class='col-acao'>Ações</th></tr>";
+      
+      dados.forEach(row => {
+        // Formata o vencimento (se estiver vindo como YYYY-MM-DDT... do Sheets)
+        let vencimentoFormatado = row[5];
+        if(vencimentoFormatado.includes("T")) {
+           let dataObj = new Date(vencimentoFormatado);
+           vencimentoFormatado = dataObj.toLocaleDateString('pt-BR');
+        }
+
+        html += `<tr>
+                  <td>${row[1]}</td>
+                  <td>${row[2]}</td>
+                  <td>R$ ${row[3]}</td>
+                  <td>R$ ${row[4]}</td>
+                  <td>${vencimentoFormatado}</td>
+                  <td class="col-acao">
+                    <button class="btn-edit" onclick="abrirEdicao('${row[0]}', '${row[1]}', '${row[2]}', '${row[3]}', '${row[4]}', '${row[5]}')">Editar</button>
+                    <button class="btn-del" onclick="apagar('${row[0]}')">Apagar</button>
+                  </td>
+                 </tr>`;
+      });
+      html += "</table>";
+      document.getElementById('tabelaContainer').innerHTML = html;
+    }
+
+    // --- NOVA LÓGICA DE FILTRO POR DATA ---
+    
+    // Converte "DD/MM/AAAA" para objeto Date do Javascript
+    function parseDataBR(dataStr) {
+      if(!dataStr) return null;
+      const partes = dataStr.split('/');
+      return new Date(partes[2], partes[1] - 1, partes[0]);
+    }
+
+    // Converte "AAAA-MM-DD" (formato do input date) para objeto Date
+    function parseDataInput(dataString) {
+      if (!dataString) return null;
+      const partes = dataString.split('-');
+      return new Date(partes[0], partes[1] - 1, partes[2]);
+    }
+
+    function filtrarTabela() {
+      const dtInicioVal = document.getElementById('buscaInicio').value;
+      const dtFimVal = document.getElementById('buscaFim').value;
+
+      if (!dtInicioVal && !dtFimVal) {
+        renderizarHTML(dadosGlobais);
+        return;
+      }
+
+      const searchStart = parseDataInput(dtInicioVal);
+      const searchEnd = parseDataInput(dtFimVal);
+
+      const dadosFiltrados = dadosGlobais.filter(row => {
+        const periodoStr = row[1]; // Ex: "08/03/2026 ATÉ 14/03/2026"
+        if (!periodoStr || !periodoStr.includes(" ATÉ ")) return false;
+
+        const partesPeriodo = periodoStr.split(" ATÉ ");
+        const rowStart = parseDataBR(partesPeriodo[0]);
+        const rowEnd = parseDataBR(partesPeriodo[1]);
+
+        let condicaoInicio = true;
+        let condicaoFim = true;
+
+        // Se preencheu a data de início, o registro deve ter começado na data ou depois dela
+        if (searchStart) {
+          condicaoInicio = rowStart >= searchStart;
+        }
+        
+        // Se preencheu a data de fim, o registro deve ter terminado na data ou antes dela
+        if (searchEnd) {
+          condicaoFim = rowEnd <= searchEnd;
+        }
+
+        return condicaoInicio && condicaoFim;
+      });
+
+      renderizarHTML(dadosFiltrados);
+    }
+
+    function limparFiltros() {
+      document.getElementById('buscaInicio').value = "";
+      document.getElementById('buscaFim').value = "";
+      renderizarHTML(dadosGlobais);
+    }
+
+    // --- FIM DA LÓGICA DE FILTRO ---
+
+    function apagar(id) {
+      if(confirm("Tem certeza que deseja apagar este registro?")) {
+        document.getElementById('tabelaContainer').innerHTML = "Apagando registro...";
+        
+        fetch(`${urlAppScript}?action=deletar&id=${id}`)
+          .then(response => response.json())
+          .then(data => {
+            if(data.status === 'sucesso') {
+              carregarDados(); 
+            }
+          })
+          .catch(error => alert("Erro ao deletar o registro."));
+      }
+    }
+
+    // --- FUNÇÕES DE EDIÇÃO ---
+
+    document.getElementById('editBruto').addEventListener('input', aplicarMascaraMoeda);
+    document.getElementById('editDesconto').addEventListener('input', aplicarMascaraMoeda);
+
+    function aplicarMascaraMoeda(e) {
+      let valor = e.target.value.replace(/\D/g, "");
+      if (valor === "") { e.target.value = ""; return; }
+      let numFloat = parseInt(valor, 10) / 100;
+      e.target.value = numFloat.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Converte a data do Sheets (DD/MM/AAAA) para o input type="date" (AAAA-MM-DD)
+    function dataBRparaInput(dataStr) {
+        if(!dataStr || dataStr.includes("-")) return dataStr; // Se já vier como AAAA-MM-DD do Sheets
+        const partes = dataStr.split('/');
+        return `${partes[2]}-${partes[1]}-${partes[0]}`;
+    }
+
+    // Converte do input type="date" (AAAA-MM-DD) de volta para DD/MM/AAAA antes de salvar
+    function dataInputParaBR(dataStr) {
+        if(!dataStr) return "";
+        const partes = dataStr.split('-');
+        return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    }
+
+    function abrirEdicao(id, periodo, quant, bruto, desconto, vencimento) {
+      document.getElementById('editId').value = id;
+      document.getElementById('editPeriodo').value = periodo;
+      document.getElementById('editQuant').value = quant;
+      document.getElementById('editBruto').value = bruto;
+      document.getElementById('editDesconto').value = desconto;
+      
+      // O campo vencimento na edição agora é um calendário para facilitar a mudança
+      document.getElementById('editVencimento').value = dataBRparaInput(vencimento);
+      
+      document.getElementById('modalEdicao').style.display = 'block';
+    }
+
+    function fecharEdicao() {
+      document.getElementById('modalEdicao').style.display = 'none';
+    }
+
+    function salvarEdicao() {
+      const id = document.getElementById('editId').value;
+      const p = encodeURIComponent(document.getElementById('editPeriodo').value);
+      const q = encodeURIComponent(document.getElementById('editQuant').value);
+      const b = encodeURIComponent(document.getElementById('editBruto').value);
+      const d = encodeURIComponent(document.getElementById('editDesconto').value);
+      
+      // Converte o vencimento do calendário de volta para o padrão BR
+      const vOriginal = document.getElementById('editVencimento').value;
+      const vBR = encodeURIComponent(dataInputParaBR(vOriginal));
+
+      document.getElementById('conteudoModal').innerHTML = "<h3 style='text-align:center;'>Salvando alterações...</h3>";
+
+      fetch(`${urlAppScript}?action=editar&id=${id}&periodo=${p}&quant=${q}&bruto=${b}&desconto=${d}&vencimento=${vBR}`)
+        .then(response => response.json())
+        .then(data => {
+          if(data.status === 'sucesso') {
+            alert("Lançamento atualizado!");
+            location.reload(); 
+          }
+        })
+        .catch(error => {
+          alert("Erro ao editar o registro.");
+          location.reload();
+        });
+    }
+  </script>
+</body>
+</html>
