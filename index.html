@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Lançamento de NFs</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f4f4f9; }
+    
+    .banner { 
+      background-color: #003366; 
+      background-image: url('meu-banner.jpg'); /* COLOQUE SUA IMAGEM AQUI */
+      background-size: cover; 
+      background-position: center; 
+      color: white; 
+      padding: 40px 20px; 
+      text-align: center; 
+      border-radius: 0 0 8px 8px;
+    }
+    
+    .container { max-width: 600px; margin: 20px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    input { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 15px;}
+    input[readonly] { background-color: #e9ecef; cursor: not-allowed; font-weight: bold; color: #28a745; }
+    
+    .row-datas { display: flex; gap: 15px; }
+    .row-datas div { flex: 1; }
+
+    button { background: #28a745; color: white; border: none; padding: 12px 20px; cursor: pointer; border-radius: 5px; width: 100%; font-size: 16px; font-weight: bold; }
+    button.btn-nav { background: #007bff; margin-top: 10px; }
+    button:hover { opacity: 0.9; }
+    
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
+    .modal-content { background: white; margin: 15% auto; padding: 20px; width: 320px; border-radius: 8px; text-align: center; }
+    .modal-content button { width: 45%; display: inline-block; margin: 5px; }
+    .btn-cancel { background: #dc3545; }
+  </style>
+</head>
+<body>
+
+  <div class="banner">
+    <img src="https://i.postimg.cc/5t29QDKd/logo.png" alt="Logotipo" style="max-height: 80px; margin-bottom: 10px;">
+    <h2>Lançamento e Fechamento de NFs MIALICH</h2>
+  </div>
+
+  <div class="container">
+    <form id="formNF">
+      
+      <div class="row-datas">
+        <div>
+          <label>Data Início:</label>
+          <input type="date" id="dataInicio" class="pula-enter" required>
+        </div>
+        <div>
+          <label>Data Fim:</label>
+          <input type="date" id="dataFim" class="pula-enter" required>
+        </div>
+      </div>
+      
+      <label>Quantidade de NF:</label>
+      <input type="number" id="quant" class="pula-enter" required>
+      
+      <label>Valor Bruto (R$):</label>
+      <input type="text" id="bruto" class="pula-enter" placeholder="0,00" required>
+      
+      <label>Valor c/ Desconto de 11% (R$):</label>
+      <input type="text" id="desconto" placeholder="0,00" readonly required>
+      
+      <label>Vencimento:</label>
+      <input type="date" id="vencimento" class="pula-enter" required>
+      
+      <button type="button" class="pula-enter" onclick="abrirRevisao()">Revisar e Salvar</button>
+      <button type="button" class="btn-nav" onclick="window.location.href='consulta.html'">Ir para Consulta</button>
+    </form>
+  </div>
+
+  <div id="modalRevisao" class="modal">
+    <div class="modal-content">
+      <h3>Revisar Dados</h3>
+      <div id="dadosRevisao" style="text-align: left; margin-bottom: 15px; font-size: 14px; line-height: 1.5;"></div>
+      <button class="btn-cancel" onclick="fecharRevisao()">Corrigir</button>
+      <button onclick="salvarDados()">Confirmar</button>
+    </div>
+  </div>
+
+  <script>
+    // SEU LINK DO APPS SCRIPT
+    const urlAppScript = 'https://script.google.com/macros/s/AKfycbxnSPaTlfZvHoTUx_MxzjIOzhc652t3uOvupSvoEqxgTAvrGOKlLmAaQkzI3d-rYeGz/exec';
+
+    // 1. MÁSCARA DE MOEDA E CÁLCULO DE DESCONTO
+    document.getElementById('bruto').addEventListener('input', function(e) {
+      // Remove tudo que não é número
+      let valor = e.target.value.replace(/\D/g, "");
+      
+      if (valor === "") {
+        e.target.value = "";
+        document.getElementById('desconto').value = "";
+        return;
+      }
+
+      // Formata o Valor Bruto (Ex: 28.490,25)
+      let numFloat = parseInt(valor, 10) / 100;
+      let valorFormatado = numFloat.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      e.target.value = valorFormatado;
+
+      // Calcula os 11% de desconto e formata o resultado
+      let valorComDesconto = numFloat * 0.89;
+      document.getElementById('desconto').value = valorComDesconto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    });
+
+    // 2. NAVEGAÇÃO COM ENTER
+    const inputsEnter = document.querySelectorAll('.pula-enter');
+    inputsEnter.forEach((element, index) => {
+      element.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (index < inputsEnter.length - 1) {
+            inputsEnter[index + 1].focus();
+          } else {
+            abrirRevisao();
+          }
+        }
+      });
+    });
+
+    // Formatar data para o padrão BR
+    function formatarDataBR(dataString) {
+      if(!dataString) return "";
+      const partes = dataString.split('-');
+      return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    }
+
+    let periodoFormatado = "";
+
+    function abrirRevisao() {
+      let dtInicio = document.getElementById('dataInicio').value;
+      let dtFim = document.getElementById('dataFim').value;
+      let q = document.getElementById('quant').value;
+      let b = document.getElementById('bruto').value;
+      let d = document.getElementById('desconto').value;
+      let v = document.getElementById('vencimento').value;
+
+      if(!dtInicio || !dtFim || !q || !b || !d || !v) { 
+        alert("Preencha todos os campos!"); 
+        return; 
+      }
+
+      periodoFormatado = `${formatarDataBR(dtInicio)} ATÉ ${formatarDataBR(dtFim)}`;
+      let vencimentoBR = formatarDataBR(v);
+
+      document.getElementById('dadosRevisao').innerHTML = 
+        `<b>Período:</b> ${periodoFormatado}<br>
+         <b>Quant:</b> ${q}<br>
+         <b>Bruto:</b> R$ ${b}<br>
+         <b>Desconto (11%):</b> R$ ${d}<br>
+         <b>Vencimento:</b> ${vencimentoBR}`;
+      
+      document.getElementById('modalRevisao').style.display = 'block';
+    }
+
+    function fecharRevisao() {
+      document.getElementById('modalRevisao').style.display = 'none';
+    }
+
+    function salvarDados() {
+      // Pega os dados exatamente do jeito que estão escritos (já formatados!)
+      let p = encodeURIComponent(periodoFormatado);
+      let q = encodeURIComponent(document.getElementById('quant').value);
+      let b = encodeURIComponent(document.getElementById('bruto').value); 
+      let d = encodeURIComponent(document.getElementById('desconto').value);
+      let v = encodeURIComponent(formatarDataBR(document.getElementById('vencimento').value));
+
+      document.getElementById('modalRevisao').innerHTML = "<div class='modal-content'>Salvando no sistema...</div>";
+
+      const urlFinal = `${urlAppScript}?action=salvar&periodo=${p}&quant=${q}&bruto=${b}&desconto=${d}&vencimento=${v}`;
+
+      fetch(urlFinal)
+        .then(response => response.json())
+        .then(data => {
+          if(data.status === 'sucesso') {
+            alert("Lançamento salvo com sucesso!");
+            document.getElementById('formNF').reset();
+            fecharRevisao();
+            document.getElementById('modalRevisao').innerHTML = `<div class="modal-content"><h3>Revisar Dados</h3><div id="dadosRevisao" style="text-align: left; margin-bottom: 15px; font-size: 14px; line-height: 1.5;"></div><button class="btn-cancel" onclick="fecharRevisao()">Corrigir</button><button onclick="salvarDados()">Confirmar</button></div>`;
+            document.getElementById('dataInicio').focus();
+          }
+        })
+        .catch(error => {
+            alert("Erro ao salvar. Verifique se o Apps Script foi publicado como 'Nova Versão' e para 'Qualquer Pessoa'.");
+            fecharRevisao();
+        });
+    }
+  </script>
+</body>
+</html>
